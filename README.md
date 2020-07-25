@@ -3,7 +3,7 @@
 
 # Images
 
-![Screen0](https://i.imgur.com/8Ax8NRL.png)
+![Screen0](https://i.imgur.com/f2m4sR3.png)
 
 # Dependencies
 
