@@ -758,6 +758,7 @@ public:
 							if (inst->operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) {
 								auto r1_track = track(inst->operands[1].mem.base, _idx);
 								ret->op.r1 = r1_track;
+								ret->op.r1->op.op = BSWAP;//hardcode to bswap..
 							}
 							else {
 								auto r1_track = track(inst->operands[1].reg.value, _idx);
@@ -1028,7 +1029,7 @@ void ShowDisasm() {
 
 }
 void ShowTrace(int idx) {
-	char buf[124];
+	char buf[256];
 	// Get item data.
 	//int i = (int)SendMessage(hwndList, LB_GETTEXT, lbItem, (LPARAM)buf);
 
@@ -1086,7 +1087,7 @@ void ShowTrace(int idx) {
 	{
 		CRegisterTrace* f = *it;
 		std::vector< CRegisterTrace*> vFormulas;
-		sprintf_s(buf, 124, "auto F_%p = %s;\r\n", f->rva, f->get_formula(&vFormulas).c_str());
+		sprintf_s(buf, 256, "auto F_%p = %s;\r\n", f->rva, f->get_formula(&vFormulas).c_str());
 		str += buf;
 	}
 	sprintf_s(buf, 124, "auto _F = %s;\r\n", formula.c_str());
@@ -1375,13 +1376,24 @@ void TestOutput() {
 	DWORD rax = 0;
 	DWORD rbx = 0;
 	DWORD rcx = 0;
+	DWORD rip = 0;
+	DWORD alias = 0;
+	DWORD peb = 0;
+	DWORD not_peb = 0;
 	DWORD BASE_MEM = 0;
 	DWORD BSWAP = 0;
-	auto F_000000000143476E = (rax >> 0x1E);
-	auto F_0000000001434772 = ((rax) ^ F_000000000143476E);
-	auto F_0000000001434778 = (F_0000000001434772 >> 0x3C);
-	auto F_0000000001434736 = (~rbx);
-	auto F_0000000001434746 = (((F_0000000001434772 ^ F_0000000001434778) ^ F_0000000001434736) ^ (BASE_MEM + 0x4244D8BD));
-	auto F_00000000014345A0 = ((0x36CF5A33B9962C9B) + F_0000000001434746);
-	auto _F = ((((BSWAP + 0xD) * F_00000000014345A0) * 0x6032E6DF0F6B4331) - 0x5C38D3E559DDA29B);
+	auto F_0000000001441212 = (BSWAP);
+	auto F_0000000001441215 = ((alias)*F_0000000001441212);
+	auto F_00000000014412BB = (F_0000000001441215 >> 0x1E);
+	auto F_00000000014412BF = ((F_0000000001441215 ^ F_00000000014412BB));
+	auto F_00000000014412C5 = (F_00000000014412BF >> 0x3C);
+	auto F_00000000014413B4 = (~peb);
+	auto F_00000000014413C1 = ((((((F_00000000014412BF ^ F_00000000014412C5) + 0x707C09951ACCCD60) + peb) * 0x1BE9057640A87F4F) + F_00000000014413B4) + (BASE_MEM + 0x5E2D6625));
+	auto F_00000000014413C7 = (F_00000000014413C1 >> 0x0A);
+	auto F_00000000014413CB = ((F_00000000014413C1 ^ F_00000000014413C7));
+	auto F_0000000001441222 = (F_00000000014413CB >> 0x14);
+	auto F_0000000001441226 = ((F_00000000014413CB ^ F_0000000001441222));
+	auto F_000000000144146C = (F_0000000001441226 >> 0x28);
+	auto F_000000000144147A = (~(BASE_MEM + 0x6E874B86));
+	auto _F = (((F_0000000001441226 ^ F_000000000144146C) - peb) + F_000000000144147A);
 }
