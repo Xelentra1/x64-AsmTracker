@@ -62,6 +62,7 @@ public:
 	HWND ripEdit;
 	HWND hAliasEdit;
 	HWND hAliasCb;
+	HWND hListView;
 	bool bFinish = false;
 	void Init() {
 		INITCOMMONCONTROLSEX icex;           // Structure for control initialization.
@@ -163,17 +164,46 @@ public:
 			L"DEBUG FRAMES",
 			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
 			302, 2,
-			280, 380,
+			480, 380,
 			hWnd,
 			(HMENU)4,
 			hInstance, NULL);
 		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
 
-		hListBox2 = CreateWindowEx(0, WC_LISTBOXA, NULL,
+		/*hListBox2 = CreateWindowEx(0, WC_LISTBOXA, NULL,
 			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
 			308, 18, 260, 360,
 			hWnd, (HMENU)SCAN_LISTBOX2, hInstance, NULL);
-		SendMessage(hListBox2, WM_SETFONT, wFont, TRUE);
+		SendMessage(hListBox2, WM_SETFONT, wFont, TRUE);*/
+
+
+		hListView = CreateWindowEx(0, WC_LISTVIEWA, NULL,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LVS_REPORT,
+			308, 18, 460, 360,
+			hWnd, (HMENU)SCAN_LISTVIEW, hInstance, NULL);
+		SendMessage(hListView, WM_SETFONT, WPARAM(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+		SendMessage(hListView, LVM_SETEXTENDEDLISTVIEWSTYLE,
+			0, LVS_EX_FULLROWSELECT); // Set style
+		LVCOLUMNA LvCol;
+		// Here we put the info on the Coulom headers
+		// this is not data, only name of each header we like
+		memset(&LvCol, 0, sizeof(LvCol));                  // Zero Members
+
+		LvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;    // Type of mask
+		LvCol.cx = 0x28;                                   // width between each coloum
+		LvCol.pszText = (LPSTR)"Offset";                            // First Header Text
+		LvCol.cx = 80;                                   // width of column
+														   // Inserting Couloms as much as we want
+		SendMessage(hListView, LVM_INSERTCOLUMN, 0, (LPARAM)&LvCol); // Insert/Show the coloum
+		LvCol.pszText = (LPSTR)"Name";                            // Next coloum
+		LvCol.cx = 200;                                   // width of column
+		SendMessage(hListView, LVM_INSERTCOLUMN, 1, (LPARAM)&LvCol); // ...
+		LvCol.pszText = (LPSTR)"Value";                            //
+		LvCol.cx = 180;                                   // width of column
+		SendMessage(hListView, LVM_INSERTCOLUMN, 2, (LPARAM)&LvCol); //
+																	 //draw listview and tableview
+
+																	 //edit options
 
 
 		hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
@@ -325,6 +355,7 @@ public:
 	DWORD idx;
 	DWORD64 rva = 0;
 	CONTEXT ctx;
+	DWORD iComment = 0;
 	CRegisterFrame(DWORD _rva, CONTEXT _ctx) : rva(_rva), ctx(_ctx) {
 		idx = c_idx++;
 	}
@@ -649,8 +680,7 @@ public:
 
 						//auto r0_track = track(inst->operands[1].reg.value, _idx);
 						//ret->op.r0 = r0_track;
-					}
-					if (inst->mnemonic == ZYDIS_MNEMONIC_MOVSXD) {
+					} else if (inst->mnemonic == ZYDIS_MNEMONIC_MOVSXD) {
 						//make sure to note its a WORD
 						ret->op.op = REGISTER;
 						//r1 is register, check if we use alias or formula
@@ -789,6 +819,10 @@ public:
 							ret->op.mem_base = true;
 						}
 					}
+					else {
+						//unk?
+						ret->rva = 0;
+					}
 					break;
 				}
 			}
@@ -839,15 +873,63 @@ std::string find_alias(ZydisRegister r) {
 	}
 	return std::string();
 }
+
+
+void AddItem(int offset, std::string name, std::string value, ULONG_PTR lParam = 0) {
+	static char msg[1024 * 4];
+	/*if (bRefresh) {
+		UINT iIndex = iField++;
+
+		LVITEM LvItem;
+		memset(&LvItem, 0, sizeof(LvItem)); // Zero struct's Members
+
+		LvItem.mask = LVIF_TEXT;
+		LvItem.cchTextMax = 256; // Max size of test
+		LvItem.iItem = iIndex;          // choose item  
+
+		strcpy_s(msg, 1024 * 4, value.c_str());
+		LvItem.iSubItem = 2;
+		LvItem.pszText = msg;
+		SendMessage(hListView, LVM_SETITEM, 0, (LPARAM)&LvItem); // Enter text to SubItems
+
+		return;
+	}*/
+	LVITEM LvItem;
+	memset(&LvItem, 0, sizeof(LvItem)); // Zero struct's Members
+
+										//  Setting properties Of members:
+
+	sprintf_s(msg, 124, "0x%08X", offset);
+	LvItem.lParam = (LPARAM)lParam;// "Test";
+	LvItem.mask = LVIF_TEXT | LVIF_PARAM;   // Text Style
+	LvItem.cchTextMax = 256; // Max size of test
+	LvItem.iItem = ListView_GetItemCount(gui.hListView);          // choose item  
+	LvItem.iSubItem = 0;       // Put in first coluom
+	LvItem.pszText = msg;//"00"; // Text to display (can be from a char variable) (Items)
+	SendMessage(gui.hListView, LVM_INSERTITEM, 0, (LPARAM)&LvItem); // Send info to the Listview
+	//return;//
+	LvItem.mask = LVIF_TEXT;
+	strcpy_s(msg, 1024, name.c_str());
+	LvItem.iSubItem = 1;
+	LvItem.pszText = msg;//(LPSTR)p.GetName().c_str();//"Name";
+	SendMessage(gui.hListView, LVM_SETITEM, 0, (LPARAM)&LvItem); // Enter text to SubItems
+
+	strcpy_s(msg, 1024 * 4, value.c_str());
+	LvItem.iSubItem = 2;
+	LvItem.pszText = msg;
+	SendMessage(gui.hListView, LVM_SETITEM, 0, (LPARAM)&LvItem); // Enter text to SubItems
+}
+
+
 void ListTrace() {
 
 	ZydisFormatter formatter;
 	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
 
-	SendMessage(gui.hListBox2, LB_RESETCONTENT, 0, 0);
+	SendMessage(gui.hListView, LVM_DELETEALLITEMS, 0, 0);
 	for (DWORD i = 0; i < regTracker.frames.size(); i++) {
 		std::string str;
-		auto frame = regTracker.frames[i];
+		auto &frame = regTracker.frames[i];
 		char buf[32];
 		sprintf_s(buf, 32, "[0x%08X]: ", frame.rva);
 		str += buf;
@@ -857,7 +939,28 @@ void ListTrace() {
 		ZydisFormatterFormatInstruction(&formatter, &instruction, buffer, sizeof(buffer));
 		str += buffer;
 
-		SendMessage(gui.hListBox2, LB_ADDSTRING, 0, (LPARAM)str.c_str());
+		frame.iComment = 0;
+		//build comment here..
+		std::string comment;
+		auto t = regTracker.track(instruction.operands[0].reg.value,i+1);
+		if (t && regTracker.register_alias.find(instruction.operands[0].reg.value) != regTracker.register_alias.end()) {
+			frame.iComment = 1;
+			char cComment[256];
+			std::vector< CRegisterTrace*> vFormulas;
+			sprintf_s(cComment, 256, "%s = %s %s //%s", ZydisRegisterGetString(instruction.operands[0].reg.value), ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str(),t->op.r1->get_formula(&vFormulas).c_str());
+			comment = cComment;
+		}
+		else {
+			frame.iComment = 2;
+			auto t = regTracker.track(instruction.operands[1].reg.value, i+1);
+			if (t && regTracker.register_alias.find(instruction.operands[1].reg.value) != regTracker.register_alias.end()) {
+				char cComment[256];
+				sprintf_s(cComment, 256, "%s = %s", ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str());
+				comment = cComment;
+			}
+		}
+
+		AddItem(frame.rva, buffer, comment, (ULONG_PTR)&frame);
 	}
 }
 void StepOver() {
@@ -924,13 +1027,137 @@ void ShowDisasm() {
 
 
 }
+void ShowTrace(int idx) {
+	char buf[124];
+	// Get item data.
+	//int i = (int)SendMessage(hwndList, LB_GETTEXT, lbItem, (LPARAM)buf);
+
+	//buf[16] = 0;
+	sprintf_s(buf, 124, "%i", idx);
+	gui.SetStatus(buf);
+	//MessageBoxA(0, buf, buf, 0);
+
+	auto f = regTracker.frames[idx];
+	//track f
+	auto i = f.get_instruction();
+
+	auto r0 = i.operands[0].reg.value;
+	auto r0_track = regTracker.track(r0, idx + 1);
+	std::string str = ZydisRegisterGetString(r0);
+	SendMessage(gui.hListBox3, LB_RESETCONTENT, 0, 0);
+	if (!r0_track) {
+	}
+	else {
+		sprintf_s(buf, 124, "%i / %s", r0_track->opCount(), ZydisRegisterGetString(r0));
+		SendMessage(gui.hListBox3, LB_ADDSTRING, 0, (LPARAM)buf);
+		auto p = r0_track;
+		while (p && (p->rva || p->op.op == REGISTER)) {
+
+			sprintf_s(buf, 124, "%p / %s", p->rva, p->get_operation().c_str());
+			SendMessage(gui.hListBox3, LB_ADDSTRING, 0, (LPARAM)buf);
+			p = p->get_prev();
+		}
+	}
+
+	auto r1 = i.operands[1].reg.value;
+	if (i.operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) r1 = i.operands[1].mem.base;
+	auto r1_track = regTracker.track(r1, idx);
+	SendMessage(gui.hListBox4, LB_RESETCONTENT, 0, 0);
+	if (!r1_track) {
+	}
+	else {
+		sprintf_s(buf, 124, "%i / %s", r1_track->opCount(), ZydisRegisterGetString(r1));
+		SendMessage(gui.hListBox4, LB_ADDSTRING, 0, (LPARAM)buf);
+		auto p = r1_track;
+		while (p && (p->rva || p->op.op == REGISTER)) {
+
+			sprintf_s(buf, 124, "%p / %s", p->rva, p->get_operation().c_str());
+			SendMessage(gui.hListBox4, LB_ADDSTRING, 0, (LPARAM)buf);
+			p = p->get_prev();
+		}
+	}
+	//print needed formulas too..
+	std::vector< CRegisterTrace*> formulas;
+	auto formula = r0_track->get_formula(&formulas);
+
+	sprintf_s(buf, 124, "%i sub-formulas\r\n", formulas.size());
+	str = buf;
+	for (auto it = formulas.rbegin(); it != formulas.rend(); ++it)
+	{
+		CRegisterTrace* f = *it;
+		std::vector< CRegisterTrace*> vFormulas;
+		sprintf_s(buf, 124, "auto F_%p = %s;\r\n", f->rva, f->get_formula(&vFormulas).c_str());
+		str += buf;
+	}
+	sprintf_s(buf, 124, "auto _F = %s;\r\n", formula.c_str());
+	str += buf;
+
+	gui.SetLog(str.c_str());
+}
 #include <windowsx.h>
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
 	{
 	case WM_NOTIFY:
+		if ((((LPNMHDR)lParam)->hwndFrom) == gui.hListView)
+		{
+			switch (((LPNMHDR)lParam)->code)
+			{
+			case NM_CUSTOMDRAW:
+			{
+				LPNMLVCUSTOMDRAW  lplvcd = (LPNMLVCUSTOMDRAW)lParam;
+				switch (lplvcd->nmcd.dwDrawStage) {
+				case CDDS_PREPAINT:
+					return CDRF_NOTIFYITEMDRAW;
+					break;
+				case CDDS_SUBITEM | CDDS_ITEMPREPAINT:
+				case CDDS_ITEMPREPAINT: {
+					if (((int)lplvcd->nmcd.dwItemSpec % 2) == 0) {
+						lplvcd->clrText = RGB(0, 0, 0);
+						lplvcd->clrTextBk = RGB(222, 222, 222);
+					}
+					else {
+						lplvcd->clrText = RGB(0, 0, 0);
+						lplvcd->clrTextBk = RGB(255, 255, 255);
+					}
+					if (lplvcd->iSubItem == 2) {
+						char pText[124];
+						ListView_GetItemText(gui.hListView, lplvcd->nmcd.dwItemSpec, 2, pText, 124);
 
+						LVITEM SelectedItem;
+						SelectedItem.iItem = lplvcd->nmcd.dwItemSpec;
+						SelectedItem.mask = LVIF_PARAM;
+						ListView_GetItem(gui.hListView, (LVITEM*)&SelectedItem);
+						CRegisterFrame* f = (CRegisterFrame * )SelectedItem.lParam;
+						if (f) {
+							if (f->iComment == 1)
+								lplvcd->clrText = RGB(235, 61, 52); //red
+							else
+								lplvcd->clrText = RGB(52, 152, 235); //blue
+						}
+					}
+
+					return CDRF_NOTIFYSUBITEMDRAW;
+					break;
+				}
+				}
+
+
+				OutputDebugStringA("DRAW\n");
+				return TRUE;
+			}
+
+			case NM_CLICK:
+			{
+				char msg[124];
+				int ItemIndex = SendMessage(gui.hListView, LVM_GETNEXTITEM, -1, LVNI_SELECTED);
+				printf("self: %i\n", ItemIndex);
+				ShowTrace(ItemIndex);
+				break;
+			}
+		}
+		}
 		break;
 	case WM_COMMAND:
 
@@ -1061,72 +1288,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 				// Get selected index.
 				int lbItem = (int)SendMessage(hwndList, LB_GETCURSEL, 0, 0);
 
-				char buf[124];
-				// Get item data.
-				//int i = (int)SendMessage(hwndList, LB_GETTEXT, lbItem, (LPARAM)buf);
-
-				//buf[16] = 0;
-				sprintf_s(buf, 124, "%i", lbItem);
-				gui.SetStatus(buf);
-				//MessageBoxA(0, buf, buf, 0);
-
-				int idx = lbItem;
-				auto f = regTracker.frames[idx];
-				//track f
-				auto i = f.get_instruction();
-
-				auto r0 = i.operands[0].reg.value;
-				auto r0_track = regTracker.track(r0, idx+1);
-				std::string str = ZydisRegisterGetString(r0);
-				SendMessage(gui.hListBox3, LB_RESETCONTENT, 0, 0);
-				if (!r0_track ) {
-				}
-				else {
-					sprintf_s(buf, 124, "%i / %s", r0_track->opCount(), ZydisRegisterGetString(r0));
-					SendMessage(gui.hListBox3, LB_ADDSTRING, 0, (LPARAM)buf);
-					auto p = r0_track;
-					while (p && (p->rva || p->op.op == REGISTER)) {
-
-						sprintf_s(buf, 124, "%p / %s", p->rva, p->get_operation().c_str());
-						SendMessage(gui.hListBox3, LB_ADDSTRING, 0, (LPARAM)buf);
-						p = p->get_prev();
-					}
-				}
-
-				auto r1 = i.operands[1].reg.value;
-				if(i.operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) r1 = i.operands[1].mem.base;
-				auto r1_track = regTracker.track(r1, idx);
-				SendMessage(gui.hListBox4, LB_RESETCONTENT, 0, 0);
-				if (!r1_track) {
-				}
-				else {
-					sprintf_s(buf, 124, "%i / %s", r1_track->opCount(), ZydisRegisterGetString(r1));
-					SendMessage(gui.hListBox4, LB_ADDSTRING, 0, (LPARAM)buf);
-					auto p = r1_track;
-					while (p && (p->rva || p->op.op == REGISTER)) {
-
-						sprintf_s(buf, 124, "%p / %s", p->rva,p->get_operation().c_str());
-						SendMessage(gui.hListBox4, LB_ADDSTRING, 0, (LPARAM)buf);
-						p = p->get_prev();
-					}
-				}
-				//print needed formulas too..
-				std::vector< CRegisterTrace*> formulas;
-				auto formula = r0_track->get_formula(&formulas);
-
-				sprintf_s(buf, 124, "%i sub-formulas\r\n",formulas.size());
-				str = buf;
-				for (auto it = formulas.rbegin(); it != formulas.rend(); ++it)
-				{
-					CRegisterTrace* f = *it;
-					std::vector< CRegisterTrace*> vFormulas;
-					sprintf_s(buf, 124, "auto F_%p = %s;\r\n", f->rva,f->get_formula(&vFormulas).c_str());
-					str += buf;
-				}
-				sprintf_s(buf, 124, "auto _F = %s;\r\n",formula.c_str());
-				str += buf;
-
-				gui.SetLog(str.c_str());
+				ShowTrace(lbItem);
 			}
 			}
 			break;
