@@ -9,9 +9,11 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 #include <vector>
 #include "Dbg.hpp"
+#include "Lua.hpp"
 
 HINSTANCE hInstance;
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 #define SCREEN_WIDTH  1000
 #define SCREEN_HEIGHT 832
 
@@ -44,9 +46,21 @@ enum WND_MENU {
 	STATUS_STATIC,
 	IDM_FILE_NEW,
 	IDM_FILE_OPEN,
-	IDM_FILE_QUIT
-
+	IDM_FILE_QUIT,
+	//script wnd
+	EXECUTE_SCRIPT,
+	SCRIPT_BOX,
 };
+#include "UI.h"
+CScriptGUI* scriptGui = NULL;
+
+void MakeGroupBox(HWND hWnd, LPCWSTR szLabel, DWORD x, DWORD y, DWORD w, DWORD h) {
+	HWND hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
+		L"BUTTON",szLabel,WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
+		x - 14, y - 16,	w + 20, h + 28,
+		hWnd,(HMENU)4,hInstance, NULL);
+	SendMessage(hGrpButtons, WM_SETFONT, WPARAM(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+}
 class CMainGUI {
 public:
 	HWND hWnd;
@@ -68,8 +82,11 @@ public:
 		INITCOMMONCONTROLSEX icex;           // Structure for control initialization.
 		icex.dwICC = ICC_LISTVIEW_CLASSES;
 		InitCommonControlsEx(&icex);
+		
+		scriptGui = new CScriptGUI;
+		scriptGui->Init();
 
-		const char* wndClass = "wndclass";
+		const char* wndClass = "main_wndclass";
 		WNDCLASSEXA wc;
 		ZeroMemory(&wc, sizeof(WNDCLASSEX));
 		wc.cbSize = sizeof(WNDCLASSEX);
@@ -141,16 +158,7 @@ public:
 		SendMessage(hSearch, WM_SETFONT, wFont, TRUE);
 
 
-		HWND hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
-			L"BUTTON",
-			L"DISASM",
-			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
-			8, 2,
-			280, 380,
-			hWnd,
-			(HMENU)4,
-			hInstance, NULL);
-		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
+		MakeGroupBox(hWnd, L"DISASM",18, 18, 260, 360);
 
 		hListBox = CreateWindowEx(0, WC_LISTBOXA, NULL,
 			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
@@ -159,23 +167,7 @@ public:
 		SendMessage(hListBox, WM_SETFONT, wFont, TRUE);
 
 
-		 hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
-			L"BUTTON",
-			L"DEBUG FRAMES",
-			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
-			302, 2,
-			480, 380,
-			hWnd,
-			(HMENU)4,
-			hInstance, NULL);
-		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
-
-		/*hListBox2 = CreateWindowEx(0, WC_LISTBOXA, NULL,
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
-			308, 18, 260, 360,
-			hWnd, (HMENU)SCAN_LISTBOX2, hInstance, NULL);
-		SendMessage(hListBox2, WM_SETFONT, wFont, TRUE);*/
-
+		MakeGroupBox(hWnd, L"DEBUG FRAMES", 308, 18, 460, 360);
 
 		hListView = CreateWindowEx(0, WC_LISTVIEWA, NULL,
 			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LVS_REPORT,
@@ -206,16 +198,7 @@ public:
 																	 //edit options
 
 
-		hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
-			L"BUTTON",
-			L"R0",
-			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
-			302, 392,
-			280, 180,
-			hWnd,
-			(HMENU)4,
-			hInstance, NULL);
-		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
+		MakeGroupBox(hWnd, L"R0", 308, 406, 260, 160);
 
 		hListBox3 = CreateWindowEx(0, WC_LISTBOXA, NULL,
 			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
@@ -224,16 +207,7 @@ public:
 		SendMessage(hListBox3, WM_SETFONT, wFont, TRUE);
 
 
-		hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
-			L"BUTTON",
-			L"R1",
-			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
-			590, 392,
-			280, 180,
-			hWnd,
-			(HMENU)4,
-			hInstance, NULL);
-		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
+		MakeGroupBox(hWnd, L"R1", 598, 406, 260, 160);
 
 		hListBox4 = CreateWindowEx(0, WC_LISTBOXA, NULL,
 			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
@@ -241,17 +215,7 @@ public:
 			hWnd, (HMENU)SCAN_LISTBOX4, hInstance, NULL);
 		SendMessage(hListBox4, WM_SETFONT, wFont, TRUE);
 
-
-		hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
-			L"BUTTON",
-			L"LOGS",
-			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
-			300, 580,
-			640, 188,
-			hWnd,
-			(HMENU)4,
-			hInstance, NULL);
-		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
+		MakeGroupBox(hWnd, L"FORMULA", 308, 596, 620, 160);
 
 		hwndEdit = CreateWindowExA(
 			0, "EDIT",   // predefined class 
@@ -267,16 +231,7 @@ public:
 		SendMessage(hwndEdit, WM_SETFONT, wFont, TRUE);
 
 
-		hGrpButtons = CreateWindowExW(WS_EX_WINDOWEDGE,
-			L"BUTTON",
-			L"ALIAS",
-			WS_VISIBLE | WS_CHILD | BS_GROUPBOX,
-			8, 580,
-			280, 188,
-			hWnd,
-			(HMENU)4,
-			hInstance, NULL);
-		SendMessage(hGrpButtons, WM_SETFONT, wFont, TRUE);
+		MakeGroupBox(hWnd, L"ALIAS", 18, 596, 260, 140);
 
 
 		hListBox5= CreateWindowEx(0, WC_LISTBOXA, NULL,
@@ -320,7 +275,7 @@ public:
 	void Run() {
 		MSG msg;
 		while (!bFinish) {
-			while (PeekMessage(&msg, hWnd, 0, 0, PM_REMOVE)) {
+			while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
 				TranslateMessage(&msg);
 				DispatchMessage(&msg);
 				if (msg.message == WM_QUIT || msg.message == WM_DESTROY)
@@ -348,6 +303,82 @@ public:
 	}
 } gui;
 
+	void CScriptGUI::Init() {
+
+		const char* wndClass = "script_wndclass";
+		WNDCLASSEXA wc;
+		ZeroMemory(&wc, sizeof(WNDCLASSEX));
+		wc.cbSize = sizeof(WNDCLASSEX);
+		//wc.style = CS_DBLCLKS | CS_GLOBALCLASS;// CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+		wc.lpfnWndProc = ScriptWindowProc;
+		wc.lpszClassName = wndClass;
+		wc.hInstance = hInstance;//GetModuleHandle(nullptr);
+		//wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+		wc.hbrBackground = (HBRUSH)(COLOR_WINDOW);//(HBRUSH)GetStockObject(BLACK_BRUSH);//reinterpret_cast<HBRUSH>(COLOR_WINDOW);
+		//wc.lpszClassName = wndClass;
+		RegisterClassExA(&wc);
+		unsigned int dwStyle = (WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX);
+		hWnd = CreateWindowExA(NULL, wndClass, "x64-ASM Tracker - Script Engine", dwStyle, 300, 300, 500,600, nullptr, nullptr, GetModuleHandle(nullptr), nullptr);
+
+		WPARAM wFont = WPARAM(GetStockObject(DEFAULT_GUI_FONT));
+		SetParent(hWnd, gui.hWnd);
+
+		MakeGroupBox(hWnd, L"SCRIPT", 28, 28, 740, 320);
+		hScriptEdit = CreateWindowExA(
+			0, "EDIT",   // predefined class 
+			NULL,         // no window title 
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+			ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL,
+			28, 28, 620, 320,   // set size in WM_SIZE message 
+			hWnd,         // parent window 
+			(HMENU)LOG_BOX,   // edit control ID 
+			hInstance,
+			NULL);        // pointer not needed 
+
+		SetWindowText(hScriptEdit,
+			"if(not FileLoaded()) then LoadPreviousFile() end\r\n"
+			"local r = Scan('11 22 33')\r\n"
+			"Log('Scan Result: '..r)\r\n"
+			"SetRva(0x1434492)\r\n"
+			"StepOver(4)\r\n"
+			"local c = GetContext()\r\n"
+			"Log(string.format('Hi! %x',c.rip))");
+		SendMessage(hScriptEdit, WM_SETFONT, wFont, TRUE);
+
+		HWND hSearch = CreateWindowEx(0, WC_BUTTONA, NULL,
+			WS_CHILD | WS_VISIBLE,
+			658, 32, 82, 22,
+			hWnd, (HMENU)EXECUTE_SCRIPT, hInstance, NULL);
+		SetWindowText(hSearch, "EXECUTE");
+		SendMessage(hSearch, WM_SETFONT, wFont, TRUE);
+
+		hScriptBox = CreateWindowEx(0, WC_LISTBOXA, NULL,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LBS_NOTIFY,
+			648, 68, 102, 140,
+			hWnd, (HMENU)SCRIPT_BOX, hInstance, NULL);
+		SendMessage(hScriptBox, WM_SETFONT, wFont, TRUE);
+		SendMessage(hScriptBox, LB_ADDSTRING, 0, (LPARAM)"New");
+		SendMessage(hScriptBox, LB_SETCURSEL, 0, 0);
+
+
+		MakeGroupBox(hWnd, L"LOG", 28, 388, 740, 160);
+		hLogEdit = CreateWindowExA(
+			0, "EDIT",   // predefined class 
+			NULL,         // no window title 
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL |
+			ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL,
+			28, 388, 740, 160,   // set size in WM_SIZE message 
+			hWnd,         // parent window 
+			(HMENU)LOG_BOX,   // edit control ID 
+			hInstance,
+			NULL);        // pointer not needed 
+
+		SendMessage(hLogEdit, WM_SETFONT, wFont, TRUE);
+
+		MoveWindow(hWnd, GetSystemMetrics(SM_CXSCREEN) - SCREEN_WIDTH - 280, 40, 800, 600, false);
+
+		ShowWindow(hWnd, SW_SHOWNORMAL);
+	}
 
 class CRegisterFrame {
 public:
@@ -1029,6 +1060,7 @@ void ShowDisasm() {
 
 }
 void ShowTrace(int idx) {
+	if (idx < 0) return;
 	char buf[256];
 	// Get item data.
 	//int i = (int)SendMessage(hwndList, LB_GETTEXT, lbItem, (LPARAM)buf);
@@ -1096,6 +1128,44 @@ void ShowTrace(int idx) {
 	gui.SetLog(str.c_str());
 }
 #include <windowsx.h>
+
+
+void LoadPreviousFile() {
+	printf("Loading %s\n", vLastFiles[0].c_str());
+	dbg.InitProcess(vLastFiles[0].c_str());
+	dbg.SingleStep();
+	bExcept = false;
+
+	auto c = dbg.GetContext();
+	char msg[124];
+	sprintf_s(msg, 124, "RVA: %p", c.Rip);
+	gui.SetStatus(msg);
+	gui.SetTitle(vLastFiles[0].c_str());
+
+	//show disasm
+	ShowDisasm();
+}
+
+LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+	case WM_COMMAND:
+
+		switch (LOWORD(wParam))
+		{
+		case EXECUTE_SCRIPT: {
+			char szScript[1024];
+			GetWindowTextA(scriptGui->hScriptEdit, szScript, 1024);
+
+			ExecuteLua(szScript);
+			break;
+		}
+		}
+		break;
+	}
+	return DefWindowProc(hWnd, message, wParam, lParam);
+}
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
@@ -1221,19 +1291,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 			break;
 		}
 		case IDM_FILE_NEW: {
-			printf("Loading %s\n", vLastFiles[0].c_str());
-			dbg.InitProcess(vLastFiles[0].c_str());
-			dbg.SingleStep();
-			bExcept = false;
-
-			auto c = dbg.GetContext();
-			char msg[124];
-			sprintf_s(msg, 124, "RVA: %p", c.Rip);
-			gui.SetStatus(msg);
-			gui.SetTitle(vLastFiles[0].c_str());
-
-			//show disasm
-			ShowDisasm();
+			LoadPreviousFile();
 
 			break;
 		}
