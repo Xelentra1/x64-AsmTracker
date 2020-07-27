@@ -18,6 +18,8 @@ enum MATH_OP {
 	AND,
 	SHR,
 	SHL,
+	ROL,
+	ROR,
 	BSWAP,
 	ALIAS,
 	FORMULA,

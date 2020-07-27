@@ -10,6 +10,7 @@ extern void ShowDisasm();
 extern void ShowDisasm();
 extern void ListTrace();
 extern void StepOver();
+extern void LoadFile(std::string);
 extern void LoadPreviousFile();
 extern void ResetDbg();
 extern void SetAlias(DWORD reg, std::string str);
@@ -249,6 +250,11 @@ void LuaInit() {
 	lua.set_function("GetBase", []() {
 		return dbg.procBase;
 		});
+	lua.set_function("GetRelativeAddress", [](DWORD64 reg) {
+		auto inst = Decode(reg);
+		DWORD64 tVal = (inst.length + inst.operands[1].mem.disp.value + inst.instrAddress) - dbg.procBase;
+		return tVal;
+		});
 	lua.set_function("Decode", [](DWORD64 reg, sol::protected_function callback) {
 		bool bLoop = true;
 		while (bLoop) {
@@ -268,7 +274,7 @@ void LuaInit() {
 		});
 	lua.set_function("DoScans", [](std::string str) {
 		auto r = AOBScan(str);
-		return r.size() ? r[0] : 0;
+		return sol::as_table(r);
 		});
 	lua.set_function("GetRva", []() {
 		CONTEXT c = dbg.GetContext();
@@ -303,7 +309,9 @@ void LuaInit() {
 		strcat_s(szPrev, MAX_LOG, str.c_str());
 		SetWindowText(scriptGui->hLogEdit, szPrev);
 		});
-	lua.set_function("LoadPreviousFile", []() {
+	lua.set_function("LoadFile", LoadFile);
+
+		lua.set_function("LoadPreviousFile", []() {
 		LoadPreviousFile();
 		});
 

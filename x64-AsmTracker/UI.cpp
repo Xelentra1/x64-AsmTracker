@@ -452,9 +452,9 @@ DWORD CRegisterTrace::opCount() {
 	std::string CRegisterTrace::get_operation() {
 		std::string ret;
 
+		char buf[124];
 		switch (op.op) {
 		case SET: {
-			char buf[64];
 			if (op.mem_base)
 				sprintf_s(buf, 64, "(BASE_MEM+0x%X)", op.iValue);
 			else
@@ -463,7 +463,6 @@ DWORD CRegisterTrace::opCount() {
 			break;
 		}
 		case MEM: {
-			char buf[64];
 			//printf("mem %p / %p\n", rva,op.r1->rva);
 			if (op.r1->op.op == REGISTER || op.r1->op.op == BSWAP) {
 				sprintf_s(buf, 64, "[%s + 0x%X]", op.r1->get_operation().c_str(), op.iValue);
@@ -520,9 +519,33 @@ DWORD CRegisterTrace::opCount() {
 		case XOR:
 			ret = "^";
 			break;
+		case ROR:
+			if (op.formula) {
+				sprintf_s(buf, 124, "__ROR8__(F_%p, 0x%02X)", op.formula->rva, op.iValue);
+				return buf;
+			}
+			if (op.r1->rva == 0) { //is reg
+				sprintf_s(buf, 124, "__ROR8__(%s, 0x%02X)", op.r1->op.alias.c_str(), op.iValue);
+			}
+			else {
+				sprintf_s(buf, 124, "__ROR8__(F_%p, 0x%02X)", op.r1->rva, op.iValue);
+			}
+			return buf;
+			break;
+		case ROL:
+			if (op.formula) {
+				sprintf_s(buf, 124, "__ROL8__(F_%p, 0x%02X)", op.formula->rva, op.iValue);
+				return buf;
+			}
+			if (op.r1->rva == 0) { //is reg
+				sprintf_s(buf, 124, "__ROL8__(%s, 0x%02X)", op.r1->op.alias.c_str(), op.iValue);
+			}
+			else {
+				sprintf_s(buf, 124, "__ROL8__(F_%p, 0x%02X)", op.r1->rva, op.iValue);
+			}
+			return buf;
+			break;
 		case SHR:
-			char buf[124];
-			//printf("%p has form? %p\n", rva, op.formula);
 			if (op.formula) {
 				sprintf_s(buf, 124, "F_%p >> 0x%02X", op.formula->rva, op.iValue);
 				return buf;
@@ -534,7 +557,19 @@ DWORD CRegisterTrace::opCount() {
 				sprintf_s(buf, 124, "F_%p >> 0x%02X", op.r1->rva, op.iValue);
 			}
 			return buf;
-			//if (op.r0->op.formula)ret += "F!";
+			break;
+		case SHL:
+			if (op.formula) {
+				sprintf_s(buf, 124, "F_%p << 0x%02X", op.formula->rva, op.iValue);
+				return buf;
+			}
+			if (op.r1->rva == 0) { //is reg
+				sprintf_s(buf, 124, "%s << 0x%02X", op.r1->op.alias.c_str(), op.iValue);
+			}
+			else {
+				sprintf_s(buf, 124, "F_%p << 0x%02X", op.r1->rva, op.iValue);
+			}
+			return buf;
 			break;
 
 		case IMUL:
@@ -773,8 +808,15 @@ std::vector< CRegisterTrace*> vTraces;
 						ret->op.r0 = r0_track;
 						ret->op.r1 = r1_track;
 					}
-					else if (inst->mnemonic == ZYDIS_MNEMONIC_SHR) {
-						ret->op.op = SHR;
+					else if (inst->mnemonic == ZYDIS_MNEMONIC_ROL || inst->mnemonic == ZYDIS_MNEMONIC_ROR) {
+						ret->op.op = inst->mnemonic == ZYDIS_MNEMONIC_ROL ? ROL:ROR;
+						ret->op.r1 = track(inst->operands[0].reg.value, _idx);
+						//printf("tracked %p and got %p / %i\n", ret->rva, ret->op.r1->rva,ret->op.r1->op.iValue);
+						//ret->op.r1 = ret->op.r0;
+						ret->op.iValue = inst->operands[1].imm.value.u;
+					}
+					else if (inst->mnemonic == ZYDIS_MNEMONIC_SHR || inst->mnemonic == ZYDIS_MNEMONIC_SHL) {
+						ret->op.op = inst->mnemonic == ZYDIS_MNEMONIC_SHR ? SHR : SHL;
 						ret->op.r1 = track(inst->operands[0].reg.value, _idx);
 						//printf("tracked %p and got %p / %i\n", ret->rva, ret->op.r1->rva,ret->op.r1->op.iValue);
 						//ret->op.r1 = ret->op.r0;
@@ -1016,10 +1058,9 @@ void ShowTrace(int idx) {
 }
 #include <windowsx.h>
 
-
-void LoadPreviousFile() {
-	printf("Loading %s\n", vLastFiles[0].c_str());
-	dbg.InitProcess(vLastFiles[0].c_str());
+void LoadFile(std::string file) {
+	printf("Loading %s\n", file.c_str());
+	dbg.InitProcess(file.c_str());
 	dbg.SingleStep();
 	bExcept = false;
 
@@ -1031,6 +1072,9 @@ void LoadPreviousFile() {
 
 	//show disasm
 	ShowDisasm();
+}
+void LoadPreviousFile() {
+	LoadFile(vLastFiles[0].c_str());
 }
 
 std::string ReadFileAsBinary(std::string const& path) {
