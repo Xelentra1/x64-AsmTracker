@@ -70,6 +70,15 @@ public:
 		idx = c_idx++;
 		rva = ctx.Rip - dbg.procBase;
 	}
+	char* get_instruction_string() {
+		if (!szInstruction[0]) {
+			auto instruction = get_instruction();
+			ZydisFormatter formatter;
+			ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
+			ZydisFormatterFormatInstruction(&formatter, &instruction, szInstruction, 64);
+		}
+		return szInstruction;
+	}
 	ZydisDecodedInstruction get_instruction() {
 		// Initialize decoder context
 		ZydisDecoder decoder;

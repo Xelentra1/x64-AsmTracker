@@ -347,13 +347,14 @@ std::vector<std::string> base_scripts;
 		newScript =
 			"if(not FileLoaded()) then LoadPreviousFile()\r\n"
 			"else ResetDbg() end\r\n"
-			"local r = GetBase()+0x1434492\r\n"
-			/*"local r = DoScan('0F B6 4C 24 40 48 C1 C9 0C 83 E1 0F 48 83 F9 0E')\r\n"
+			//"local r = GetBase()+0x1434492\r\n"
+			"local r = DoScan('0F B6 4C 24 40 48 C1 C9 0C 83 E1 0F 48 83 F9 0E')\r\n"
 			"local iSkip = 0\r\n"
 			"Decode(GetBase()+r,function(rip,it)\r\n"
-			"\tiSkip=iSkip+1 r = rip return iSkip<6\r\n"
+			"\tiSkip=iSkip+1 r = rip return iSkip<10\r\n"
 			"end)\r\n"
-			"Log(string.format('Scan Result: %x',r))\r\n"*/
+			"Log(string.format('Scan Result: %x',r))\r\n"
+			//"local r = GetBase()+0x1434492\r\n"
 			"SetRva(r-GetBase())\r\n"
 			"local tc = GetTickCount()\r\n"
 			"SetAlias(RAX,'ret')\r\n"
@@ -714,7 +715,7 @@ std::vector< CRegisterTrace*> vTraces;
 							else {
 								ret->op.op = MEM;
 								ret->op.iValue = inst->operands[1].mem.disp.value;
-								ret->op.r1 = track(inst->operands[1].mem.base);
+								ret->op.r1 = track(inst->operands[1].mem.base,_idx);
 								ret->op.mem_base = true;
 							}
 						}
@@ -1157,12 +1158,12 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 						sprintf_s(plvdi->item.pszText, 124, "0x%08X", f.rva);
 					}
 					else if (iSub == 1) {
-						strcpy_s(plvdi->item.pszText, 64,f.szInstruction);
+						strcpy_s(plvdi->item.pszText, 64,f.get_instruction_string());
 					}
 					else {
 						//comment
 						if (f.iComment == 0 && bShowComments) {//look for comment..
-							//printf("gen comment..\n");
+							printf("gen comment.. %p\n",f.rva);
 							f.iComment = 3; //means we scanned
 
 							auto instruction = f.get_instruction();
