@@ -268,7 +268,7 @@ public:
 		SendMessage(hSearch, WM_SETFONT, wFont, TRUE);
 
 
-		MoveWindow(hWnd, GetSystemMetrics(SM_CXSCREEN)- SCREEN_WIDTH-80,80,SCREEN_WIDTH, SCREEN_HEIGHT, false);
+		MoveWindow(hWnd, GetSystemMetrics(SM_CXSCREEN)- SCREEN_WIDTH-80,380,SCREEN_WIDTH, SCREEN_HEIGHT, false);
 
 		ShowWindow(hWnd, SW_SHOWNORMAL);
 	}
@@ -340,9 +340,15 @@ public:
 			"local r = Scan('11 22 33')\r\n"
 			"Log('Scan Result: '..r)\r\n"
 			"SetRva(0x1434492)\r\n"
-			"StepOver(4)\r\n"
+			"SetAlias(RAX,'ret')\r\n"
+			"StepOver(220)\r\n"
 			"local c = GetContext()\r\n"
-			"Log(string.format('Hi! %x',c.rip))");
+			"Log(string.format('Hi! %x',c.rip))\r\n"
+			"local t = Track(RAX)\r\n"
+			"Log(string.format('RAX Track! %x',t.rva))\r\n"
+			"Log('Dump {') Log(t:dump()) Log('}')"
+		
+		);
 		SendMessage(hScriptEdit, WM_SETFONT, wFont, TRUE);
 
 		HWND hSearch = CreateWindowEx(0, WC_BUTTONA, NULL,
@@ -380,68 +386,8 @@ public:
 		ShowWindow(hWnd, SW_SHOWNORMAL);
 	}
 
-class CRegisterFrame {
-public:
-	static DWORD c_idx;
-	DWORD idx;
-	DWORD64 rva = 0;
-	CONTEXT ctx;
-	DWORD iComment = 0;
-	CRegisterFrame(DWORD _rva, CONTEXT _ctx) : rva(_rva), ctx(_ctx) {
-		idx = c_idx++;
-	}
-	CRegisterFrame(CONTEXT _ctx) : ctx(_ctx) {
-		idx = c_idx++;
-		rva = ctx.Rip - dbg.procBase;
-	}
-	ZydisDecodedInstruction get_instruction() {
-		// Initialize decoder context
-		ZydisDecoder decoder;
-		ZydisDecoderInit(&decoder, ZYDIS_MACHINE_MODE_LONG_64, ZYDIS_ADDRESS_WIDTH_64);
-
-
-		ZydisDecodedInstruction instruction;
-		BYTE bRead[20];
-		dbg.ReadTo(ctx.Rip, bRead, 20);
-
-		if (ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
-			&decoder, bRead, 20,
-			ctx.Rip, &instruction))) {
-		}
-		return instruction;
-	}
-};
 DWORD CRegisterFrame::c_idx = 0;
 
-class CRegisterTrace;
-
-enum MATH_OP {
-	NOP,
-	SET,
-	MEM,
-	MEM_REG,
-	ADD,
-	SUB,
-	IMUL,
-	XOR,
-	NOT,
-	AND,
-	SHR,
-	SHL,
-	BSWAP,
-	ALIAS,
-	FORMULA,
-	REGISTER,
-};
-struct ASM_OP {
-	MATH_OP op = { NOP };
-	CRegisterTrace* r0 = NULL;
-	CRegisterTrace* r1 = NULL;
-	CRegisterTrace* formula = NULL;
-	std::string alias;
-	DWORD64 iValue = 0;
-	bool mem_base = 0;
-};
 template <class T>
 bool VectorContains(std::vector<T> vec,T cmp) {
 	bool bListed = false;
@@ -451,32 +397,26 @@ bool VectorContains(std::vector<T> vec,T cmp) {
 	return bListed;
 }
 std::string find_alias(ZydisRegister r);
-class CRegisterTrace {
-public:
-	std::vector<CRegisterTrace> vTrace;
-	ZydisRegister r = 0;
-	DWORD64 rva;
-	ASM_OP op;
-	bool formulaPrinted = false;
-	DWORD opCount() {
-		auto p = this;
-		DWORD c = 0;
-		while (p) {
-			if(p->rva)c++;
-			p = p->get_prev();
-		}
-		return c;
+
+DWORD CRegisterTrace::opCount() {
+	auto p = this;
+	DWORD c = 0;
+	while (p) {
+		if (p->rva)c++;
+		p = p->get_prev();
 	}
-	DWORD count() {
+	return c;
+}
+	DWORD CRegisterTrace::count() {
 		//if ( op.op == ALIAS) return 0;
 		DWORD i = 1;
 		if (op.r1) i += op.r1->count();
 		return i;
 	}
-	CRegisterTrace* get_prev() {
+	CRegisterTrace* CRegisterTrace::get_prev() {
 		return op.r0;
 	}
-	std::string get_operation() {
+	std::string CRegisterTrace::get_operation() {
 		std::string ret;
 
 		switch (op.op) {
@@ -599,7 +539,7 @@ public:
 		return ret;
 	}
 	//something to iterate subformulas
-	DWORD get_formulas(std::vector< CRegisterTrace*>* vFormulas) {
+	DWORD CRegisterTrace::get_formulas(std::vector< CRegisterTrace*>* vFormulas) {
 		DWORD c = 0;
 		auto prev = this;
 		while (prev) {
@@ -610,7 +550,7 @@ public:
 		}
 		return c;
 	}
-	std::string get_formula(std::vector< CRegisterTrace*>* vFormulas) {
+	std::string CRegisterTrace::get_formula(std::vector< CRegisterTrace*>* vFormulas) {
 		std::string r;
 		//if we have a previus formula, push to vector..
 		auto op = this;
@@ -669,15 +609,10 @@ public:
 		for (DWORD i = 0; i < iIsolate; i++) r = "("+r;
 		return "(" + r + ")";
 	}
-};
+
 std::vector< CRegisterTrace*> vTraces;
 #include <unordered_map>
-class CRegisterTracker {
-public:
-	std::unordered_map<ZydisRegister, std::string> register_alias;
-	std::vector<CRegisterFrame> frames;
-
-	CRegisterTrace* track(ZydisRegister r, DWORD idx = -1) {
+	CRegisterTrace* CRegisterTracker::track(ZydisRegister r, DWORD idx) {
 		if (r == ZYDIS_REGISTER_NONE) return NULL;
 		CRegisterTrace* ret = new CRegisterTrace;
 		ret->r = r;
@@ -897,11 +832,12 @@ public:
 		vTraces.push_back(ret);
 		return ret;
 	}
-} regTracker;
+	CRegisterTracker* regTracker;
+
 std::string find_alias(ZydisRegister r) {
-	auto f = regTracker.register_alias.find(r);
-	if (f != regTracker.register_alias.end()) {
-		return regTracker.register_alias[r];
+	auto f = regTracker->register_alias.find(r);
+	if (f != regTracker->register_alias.end()) {
+		return regTracker->register_alias[r];
 	}
 	return std::string();
 }
@@ -959,9 +895,9 @@ void ListTrace() {
 	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
 
 	SendMessage(gui.hListView, LVM_DELETEALLITEMS, 0, 0);
-	for (DWORD i = 0; i < regTracker.frames.size(); i++) {
+	for (DWORD i = 0; i < regTracker->frames.size(); i++) {
 		std::string str;
-		auto &frame = regTracker.frames[i];
+		auto &frame = regTracker->frames[i];
 		char buf[32];
 		sprintf_s(buf, 32, "[0x%08X]: ", frame.rva);
 		str += buf;
@@ -974,8 +910,8 @@ void ListTrace() {
 		frame.iComment = 0;
 		//build comment here..
 		std::string comment;
-		auto t = regTracker.track(instruction.operands[0].reg.value,i+1);
-		if (t && regTracker.register_alias.find(instruction.operands[0].reg.value) != regTracker.register_alias.end()) {
+		auto t = regTracker->track(instruction.operands[0].reg.value,i+1);
+		if (t && regTracker->register_alias.find(instruction.operands[0].reg.value) != regTracker->register_alias.end()) {
 			frame.iComment = 1;
 			char cComment[256];
 			std::vector< CRegisterTrace*> vFormulas;
@@ -984,8 +920,11 @@ void ListTrace() {
 		}
 		else {
 			frame.iComment = 2;
-			auto t = regTracker.track(instruction.operands[1].reg.value, i+1);
-			if (t && regTracker.register_alias.find(instruction.operands[1].reg.value) != regTracker.register_alias.end()) {
+			auto t = regTracker->track(instruction.operands[1].reg.value, i+1);
+			if (t && 
+
+				(regTracker->register_alias.find(instruction.operands[1].reg.value) != regTracker->register_alias.end())
+				) {
 				char cComment[256];
 				sprintf_s(cComment, 256, "%s = %s", ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str());
 				comment = cComment;
@@ -999,7 +938,7 @@ void StepOver() {
 
 	CONTEXT c = dbg.GetContext();
 	CRegisterFrame f = c;
-	regTracker.frames.push_back(f);
+	regTracker->frames.push_back(f);
 	dbg.SingleStep();
 	if (bExcept) {
 		//skip?
@@ -1059,6 +998,27 @@ void ShowDisasm() {
 
 
 }
+
+std::string DumpFormula(CRegisterTrace* r0_track) {
+
+	std::vector< CRegisterTrace*> formulas;
+	auto formula = r0_track->get_formula(&formulas);
+
+	char buf[256];
+	sprintf_s(buf, 124, "%i sub-formulas\r\n", formulas.size());
+	std::string str = buf;
+	for (auto it = formulas.rbegin(); it != formulas.rend(); ++it)
+	{
+		CRegisterTrace* f = *it;
+		std::vector< CRegisterTrace*> vFormulas;
+		sprintf_s(buf, 256, "auto F_%p = %s;\r\n", f->rva, f->get_formula(&vFormulas).c_str());
+		str += buf;
+	}
+	sprintf_s(buf, 124, "auto _F = %s;\r\n", formula.c_str());
+	str += buf;
+	return str;
+}
+
 void ShowTrace(int idx) {
 	if (idx < 0) return;
 	char buf[256];
@@ -1070,12 +1030,12 @@ void ShowTrace(int idx) {
 	gui.SetStatus(buf);
 	//MessageBoxA(0, buf, buf, 0);
 
-	auto f = regTracker.frames[idx];
+	auto f = regTracker->frames[idx];
 	//track f
 	auto i = f.get_instruction();
 
 	auto r0 = i.operands[0].reg.value;
-	auto r0_track = regTracker.track(r0, idx + 1);
+	auto r0_track = regTracker->track(r0, idx + 1);
 	std::string str = ZydisRegisterGetString(r0);
 	SendMessage(gui.hListBox3, LB_RESETCONTENT, 0, 0);
 	if (!r0_track) {
@@ -1094,7 +1054,7 @@ void ShowTrace(int idx) {
 
 	auto r1 = i.operands[1].reg.value;
 	if (i.operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) r1 = i.operands[1].mem.base;
-	auto r1_track = regTracker.track(r1, idx);
+	auto r1_track = regTracker->track(r1, idx);
 	SendMessage(gui.hListBox4, LB_RESETCONTENT, 0, 0);
 	if (!r1_track) {
 	}
@@ -1110,20 +1070,7 @@ void ShowTrace(int idx) {
 		}
 	}
 	//print needed formulas too..
-	std::vector< CRegisterTrace*> formulas;
-	auto formula = r0_track->get_formula(&formulas);
-
-	sprintf_s(buf, 124, "%i sub-formulas\r\n", formulas.size());
-	str = buf;
-	for (auto it = formulas.rbegin(); it != formulas.rend(); ++it)
-	{
-		CRegisterTrace* f = *it;
-		std::vector< CRegisterTrace*> vFormulas;
-		sprintf_s(buf, 256, "auto F_%p = %s;\r\n", f->rva, f->get_formula(&vFormulas).c_str());
-		str += buf;
-	}
-	sprintf_s(buf, 124, "auto _F = %s;\r\n", formula.c_str());
-	str += buf;
+	str = DumpFormula(r0_track);
 
 	gui.SetLog(str.c_str());
 }
@@ -1165,6 +1112,36 @@ LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 		break;
 	}
 	return DefWindowProc(hWnd, message, wParam, lParam);
+}
+void ResetDbg() {
+	//reset
+	CRegisterFrame::c_idx = 0;
+	vTraces.clear();
+	regTracker->frames.clear();
+	SendMessage(gui.hListBox2, LB_RESETCONTENT, 0, 0);
+}
+
+void SetAlias(DWORD reg,std::string str) {
+	if (str.empty()) {//remove
+		regTracker->register_alias.erase(reg);
+
+	}
+	else {
+		regTracker->register_alias[reg] = str;
+	}
+
+
+
+	SendMessage(gui.hListBox5, LB_RESETCONTENT, 0, 0);
+	for (auto it : regTracker->register_alias) {
+
+		std::string str = std::string(ZydisRegisterGetString(it.first)) + " = " + it.second;// "rcx = not_peb";
+
+		SendMessage(gui.hListBox5, LB_ADDSTRING, 0, (LPARAM)str.c_str());
+	}
+	//list aliases..
+
+	ListTrace();
 }
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
@@ -1250,26 +1227,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 			if (idx != -1) {
 				char cAlias[32];
 				GetWindowTextA(gui.hAliasEdit, cAlias, 32);
-				if (strlen(cAlias) == 0) {//remove
-					regTracker.register_alias.erase(ZYDIS_REGISTER_RAX + idx);
-
-				}
-				else {
-					regTracker.register_alias[ZYDIS_REGISTER_RAX + idx] = cAlias;
-				}
-
-
-
-				SendMessage(gui.hListBox5, LB_RESETCONTENT, 0, 0);
-				for (auto it : regTracker.register_alias) {
-
-					std::string str = std::string(ZydisRegisterGetString(it.first)) + " = " + it.second;// "rcx = not_peb";
-
-					SendMessage(gui.hListBox5, LB_ADDSTRING, 0, (LPARAM)str.c_str());
-				}
-				//list aliases..
-
-				gui.SetLog("Add alias!");
+				SetAlias(ZYDIS_REGISTER_RAX + idx,cAlias);
 			}
 			break;
 		}
@@ -1329,11 +1287,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 			break;
 		}
 		case IDM_FILE_QUIT:
-			//reset
-			CRegisterFrame::c_idx = 0;
-			vTraces.clear();
-			regTracker.frames.clear();
-			SendMessage(gui.hListBox2, LB_RESETCONTENT, 0, 0);
+			ResetDbg();
 
 
 			//SendMessage(hWnd, WM_CLOSE, 0, 0);
@@ -1393,6 +1347,7 @@ void SaveCfg() {
 	}
 }
 int main() {
+	regTracker = new CRegisterTracker;
 	gui.Init();
 	LoadCfg();
 	//dbg.InitProcess("C:\\Games\\Call of Duty Modern Warfare\\ModernWarfare_dump 22-07.exe");
