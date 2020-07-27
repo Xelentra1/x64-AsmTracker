@@ -38,7 +38,7 @@ class CRegisterTrace {
 public:
 	std::vector<CRegisterTrace> vTrace;
 	CRegisterTrace() {
-
+		vTrace.clear();
 	}
 	ZydisRegister r = 0;
 	DWORD64 rva;
@@ -61,6 +61,8 @@ public:
 	DWORD64 rva = 0;
 	CONTEXT ctx;
 	DWORD iComment = 0;
+	std::string comment;
+	char szInstruction[64] = { 0 };
 	CRegisterFrame(DWORD _rva, CONTEXT _ctx) : rva(_rva), ctx(_ctx) {
 		idx = c_idx++;
 	}
@@ -81,6 +83,12 @@ public:
 		if (ZYDIS_SUCCESS(ZydisDecoderDecodeBuffer(
 			&decoder, bRead, 20,
 			ctx.Rip, &instruction))) {
+			if (!szInstruction[0]) {
+
+				ZydisFormatter formatter;
+				ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
+				ZydisFormatterFormatInstruction(&formatter, &instruction, szInstruction, 64);
+			}
 		}
 		return instruction;
 	}

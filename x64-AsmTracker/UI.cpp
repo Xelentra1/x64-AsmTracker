@@ -17,6 +17,8 @@ LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 #define SCREEN_WIDTH  1000
 #define SCREEN_HEIGHT 832
 
+//options
+bool bShowComments = true;
 
 std::vector<std::string> vLastFiles;
 
@@ -78,7 +80,10 @@ public:
 	HWND hAliasCb;
 	HWND hListView;
 	bool bFinish = false;
+	HFONT fConsolas;
+	bool bRunLua = false;
 	void Init() {
+		fConsolas = CreateFont(14, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Consolas");
 		INITCOMMONCONTROLSEX icex;           // Structure for control initialization.
 		icex.dwICC = ICC_LISTVIEW_CLASSES;
 		InitCommonControlsEx(&icex);
@@ -170,7 +175,7 @@ public:
 		MakeGroupBox(hWnd, L"DEBUG FRAMES", 308, 18, 460, 360);
 
 		hListView = CreateWindowEx(0, WC_LISTVIEWA, NULL,
-			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LVS_REPORT,
+			WS_CHILD | WS_VISIBLE | WS_VSCROLL | LVS_REPORT | LVS_OWNERDATA,
 			308, 18, 460, 360,
 			hWnd, (HMENU)SCAN_LISTVIEW, hInstance, NULL);
 		SendMessage(hListView, WM_SETFONT, WPARAM(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
@@ -228,7 +233,7 @@ public:
 			hInstance,
 			NULL);        // pointer not needed 
 
-		SendMessage(hwndEdit, WM_SETFONT, wFont, TRUE);
+		SendMessage(hwndEdit, WM_SETFONT, WPARAM(fConsolas), TRUE);
 
 
 		MakeGroupBox(hWnd, L"ALIAS", 18, 596, 260, 140);
@@ -336,20 +341,31 @@ public:
 			NULL);        // pointer not needed 
 
 		SetWindowText(hScriptEdit,
-			"if(not FileLoaded()) then LoadPreviousFile() end\r\n"
-			"local r = Scan('11 22 33')\r\n"
-			"Log('Scan Result: '..r)\r\n"
-			"SetRva(0x1434492)\r\n"
+			"if(not FileLoaded()) then LoadPreviousFile()\r\n"
+			"else ResetDbg() end\r\n"
+			"local r = GetBase()+0x1434492\r\n"
+			/*"local r = DoScan('0F B6 4C 24 40 48 C1 C9 0C 83 E1 0F 48 83 F9 0E')\r\n"
+			"local iSkip = 0\r\n"
+			"Decode(GetBase()+r,function(rip,it)\r\n"
+			"\tiSkip=iSkip+1 r = rip return iSkip<6\r\n"
+			"end)\r\n"
+			"Log(string.format('Scan Result: %x',r))\r\n"*/
+			"SetRva(r-GetBase())\r\n"
+			"local tc = GetTickCount()\r\n"
 			"SetAlias(RAX,'ret')\r\n"
 			"StepOver(220)\r\n"
+			"Log('tc: '..(GetTickCount()-tc)/1000)\r\n"
 			"local c = GetContext()\r\n"
 			"Log(string.format('Hi! %x',c.rip))\r\n"
+			"tc = GetTickCount()\r\n"
 			"local t = Track(RAX)\r\n"
+			"Log('tc2: '..(GetTickCount()-tc)/1000)\r\n"
 			"Log(string.format('RAX Track! %x',t.rva))\r\n"
 			"Log('Dump {') Log(t:dump()) Log('}')"
 		
 		);
-		SendMessage(hScriptEdit, WM_SETFONT, wFont, TRUE);
+		auto hFont = gui.fConsolas;
+		SendMessage(hScriptEdit, WM_SETFONT, WPARAM(hFont), TRUE);
 
 		HWND hSearch = CreateWindowEx(0, WC_BUTTONA, NULL,
 			WS_CHILD | WS_VISIBLE,
@@ -379,7 +395,7 @@ public:
 			hInstance,
 			NULL);        // pointer not needed 
 
-		SendMessage(hLogEdit, WM_SETFONT, wFont, TRUE);
+		SendMessage(hLogEdit, WM_SETFONT, WPARAM(hFont), TRUE);
 
 		MoveWindow(hWnd, GetSystemMetrics(SM_CXSCREEN) - SCREEN_WIDTH - 280, 40, 800, 600, false);
 
@@ -626,7 +642,7 @@ std::vector< CRegisterTrace*> vTraces;
 		for (auto it = frames.rbegin(); it != frames.rend(); ++it)
 		{
 			if (idx !=-1&& it->idx >= idx) continue;
-			//else if (it == frames.rbegin()) continue; //skip first.. //loop till cur frame..
+			else if (it == frames.rbegin()) continue; //skip first.. //loop till cur frame..
 
 
 			auto _inst = it->get_instruction();
@@ -724,7 +740,7 @@ std::vector< CRegisterTrace*> vTraces;
 							if (inst->operands[1].type == ZYDIS_OPERAND_TYPE_MEMORY) {
 								auto r1_track = track(inst->operands[1].mem.base, _idx);
 								ret->op.r1 = r1_track;
-								ret->op.r1->op.op = BSWAP;//hardcode to bswap..
+								//ret->op.r1->op.op = BSWAP;//hardcode to bswap..
 							}
 							else {
 								auto r1_track = track(inst->operands[1].reg.value, _idx);
@@ -842,97 +858,8 @@ std::string find_alias(ZydisRegister r) {
 	return std::string();
 }
 
-
-void AddItem(int offset, std::string name, std::string value, ULONG_PTR lParam = 0) {
-	static char msg[1024 * 4];
-	/*if (bRefresh) {
-		UINT iIndex = iField++;
-
-		LVITEM LvItem;
-		memset(&LvItem, 0, sizeof(LvItem)); // Zero struct's Members
-
-		LvItem.mask = LVIF_TEXT;
-		LvItem.cchTextMax = 256; // Max size of test
-		LvItem.iItem = iIndex;          // choose item  
-
-		strcpy_s(msg, 1024 * 4, value.c_str());
-		LvItem.iSubItem = 2;
-		LvItem.pszText = msg;
-		SendMessage(hListView, LVM_SETITEM, 0, (LPARAM)&LvItem); // Enter text to SubItems
-
-		return;
-	}*/
-	LVITEM LvItem;
-	memset(&LvItem, 0, sizeof(LvItem)); // Zero struct's Members
-
-										//  Setting properties Of members:
-
-	sprintf_s(msg, 124, "0x%08X", offset);
-	LvItem.lParam = (LPARAM)lParam;// "Test";
-	LvItem.mask = LVIF_TEXT | LVIF_PARAM;   // Text Style
-	LvItem.cchTextMax = 256; // Max size of test
-	LvItem.iItem = ListView_GetItemCount(gui.hListView);          // choose item  
-	LvItem.iSubItem = 0;       // Put in first coluom
-	LvItem.pszText = msg;//"00"; // Text to display (can be from a char variable) (Items)
-	SendMessage(gui.hListView, LVM_INSERTITEM, 0, (LPARAM)&LvItem); // Send info to the Listview
-	//return;//
-	LvItem.mask = LVIF_TEXT;
-	strcpy_s(msg, 1024, name.c_str());
-	LvItem.iSubItem = 1;
-	LvItem.pszText = msg;//(LPSTR)p.GetName().c_str();//"Name";
-	SendMessage(gui.hListView, LVM_SETITEM, 0, (LPARAM)&LvItem); // Enter text to SubItems
-
-	strcpy_s(msg, 1024 * 4, value.c_str());
-	LvItem.iSubItem = 2;
-	LvItem.pszText = msg;
-	SendMessage(gui.hListView, LVM_SETITEM, 0, (LPARAM)&LvItem); // Enter text to SubItems
-}
-
-
 void ListTrace() {
-
-	ZydisFormatter formatter;
-	ZydisFormatterInit(&formatter, ZYDIS_FORMATTER_STYLE_INTEL);
-
-	SendMessage(gui.hListView, LVM_DELETEALLITEMS, 0, 0);
-	for (DWORD i = 0; i < regTracker->frames.size(); i++) {
-		std::string str;
-		auto &frame = regTracker->frames[i];
-		char buf[32];
-		sprintf_s(buf, 32, "[0x%08X]: ", frame.rva);
-		str += buf;
-
-		auto instruction = frame.get_instruction();
-		char buffer[256];
-		ZydisFormatterFormatInstruction(&formatter, &instruction, buffer, sizeof(buffer));
-		str += buffer;
-
-		frame.iComment = 0;
-		//build comment here..
-		std::string comment;
-		auto t = regTracker->track(instruction.operands[0].reg.value,i+1);
-		if (t && regTracker->register_alias.find(instruction.operands[0].reg.value) != regTracker->register_alias.end()) {
-			frame.iComment = 1;
-			char cComment[256];
-			std::vector< CRegisterTrace*> vFormulas;
-			sprintf_s(cComment, 256, "%s = %s %s //%s", ZydisRegisterGetString(instruction.operands[0].reg.value), ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str(),t->op.r1->get_formula(&vFormulas).c_str());
-			comment = cComment;
-		}
-		else {
-			frame.iComment = 2;
-			auto t = regTracker->track(instruction.operands[1].reg.value, i+1);
-			if (t && 
-
-				(regTracker->register_alias.find(instruction.operands[1].reg.value) != regTracker->register_alias.end())
-				) {
-				char cComment[256];
-				sprintf_s(cComment, 256, "%s = %s", ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str());
-				comment = cComment;
-			}
-		}
-
-		AddItem(frame.rva, buffer, comment, (ULONG_PTR)&frame);
-	}
+	SendMessage(gui.hListView, LVM_SETITEMCOUNT, regTracker->frames.size()-1, 0);
 }
 void StepOver() {
 
@@ -953,11 +880,7 @@ void StepOver() {
 	char msg[124];
 	sprintf_s(msg, 124, "RVA: %p", c.Rip);
 	gui.SetStatus(msg);
-
-
 }
-
-
 
 void ShowDisasm() {
 	
@@ -1102,10 +1025,8 @@ LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 		switch (LOWORD(wParam))
 		{
 		case EXECUTE_SCRIPT: {
-			char szScript[1024];
-			GetWindowTextA(scriptGui->hScriptEdit, szScript, 1024);
-
-			ExecuteLua(szScript);
+			gui.bRunLua = true;
+			SendMessage(gui.hWnd, WM_PAINT, 0, 0);
 			break;
 		}
 		}
@@ -1130,8 +1051,6 @@ void SetAlias(DWORD reg,std::string str) {
 		regTracker->register_alias[reg] = str;
 	}
 
-
-
 	SendMessage(gui.hListBox5, LB_RESETCONTENT, 0, 0);
 	for (auto it : regTracker->register_alias) {
 
@@ -1141,10 +1060,25 @@ void SetAlias(DWORD reg,std::string str) {
 	}
 	//list aliases..
 
+	//reset traces comments
+
+	for (DWORD i = 0; i < regTracker->frames.size(); i++) {
+		auto f = &regTracker->frames[i];
+		f->comment.clear();
+		f->iComment = 0;
+	}
 	ListTrace();
 }
 LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+
+	if (gui.bRunLua) {
+		char szScript[1024 * 10];
+		GetWindowTextA(scriptGui->hScriptEdit, szScript, 1024 * 10);
+		gui.bRunLua = false;
+
+		ExecuteLua(szScript);
+	}
 	switch (message)
 	{
 	case WM_NOTIFY:
@@ -1152,6 +1086,63 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 		{
 			switch (((LPNMHDR)lParam)->code)
 			{
+			case LVN_GETDISPINFO:
+			{
+				NMLVDISPINFO* plvdi = (NMLVDISPINFO*)lParam;
+				DWORD idx = plvdi->item.iItem;
+				//printf("disp info! %i\n",idx);
+				auto &f = regTracker->frames[idx];
+				if (plvdi->item.mask & LVIF_TEXT)
+				{
+					DWORD iSub = plvdi->item.iSubItem;
+					if (iSub == 0) {
+						//address.
+						char msg[124];
+						sprintf_s(plvdi->item.pszText, 124, "0x%08X", f.rva);
+					}
+					else if (iSub == 1) {
+						strcpy_s(plvdi->item.pszText, 64,f.szInstruction);
+					}
+					else {
+						//comment
+						if (f.iComment == 0 && bShowComments) {//look for comment..
+							//printf("gen comment..\n");
+							f.iComment = 3; //means we scanned
+
+							auto instruction = f.get_instruction();
+							//build comment here..
+							std::string comment;
+							auto t = regTracker->track(instruction.operands[0].reg.value, idx + 1);
+							if (t && regTracker->register_alias.find(instruction.operands[0].reg.value) != regTracker->register_alias.end()) {
+								f.iComment = 1;
+								char cComment[256];
+								std::vector< CRegisterTrace*> vFormulas;
+								sprintf_s(cComment, 256, "%s = %s %s //%s", ZydisRegisterGetString(instruction.operands[0].reg.value), ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str(), t->op.r1->get_formula(&vFormulas).c_str());
+								f.comment = cComment;
+							}
+							else {
+								f.iComment = 2;
+								auto t = regTracker->track(instruction.operands[1].reg.value, idx+ 1);
+								if (t &&
+
+									(regTracker->register_alias.find(instruction.operands[1].reg.value) != regTracker->register_alias.end())
+									) {
+									char cComment[256];
+									sprintf_s(cComment, 256, "%s = %s", ZydisRegisterGetString(instruction.operands[0].reg.value), t->get_operation().c_str());
+									f.comment = cComment;
+								}
+							}
+						}
+
+						if ((f.iComment == 1 || f.iComment == 2) && !f.comment.empty()) {
+							strcpy_s(plvdi->item.pszText, 124, f.comment.c_str());
+						}
+
+					}
+				}
+
+				break;
+			}
 			case NM_CUSTOMDRAW:
 			{
 				LPNMLVCUSTOMDRAW  lplvcd = (LPNMLVCUSTOMDRAW)lParam;
@@ -1170,15 +1161,10 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 						lplvcd->clrTextBk = RGB(255, 255, 255);
 					}
 					if (lplvcd->iSubItem == 2) {
-						char pText[124];
-						ListView_GetItemText(gui.hListView, lplvcd->nmcd.dwItemSpec, 2, pText, 124);
-
-						LVITEM SelectedItem;
-						SelectedItem.iItem = lplvcd->nmcd.dwItemSpec;
-						SelectedItem.mask = LVIF_PARAM;
-						ListView_GetItem(gui.hListView, (LVITEM*)&SelectedItem);
-						CRegisterFrame* f = (CRegisterFrame * )SelectedItem.lParam;
-						if (f) {
+						//printf("disp info! %i\n",idx);
+						auto f = &regTracker->frames[lplvcd->nmcd.dwItemSpec];
+						
+						if (f&&!f->comment.empty()) {
 							if (f->iComment == 1)
 								lplvcd->clrText = RGB(235, 61, 52); //red
 							else
@@ -1216,10 +1202,12 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 			GetWindowTextA(gui.stepEdit, cEdit, 32);
 			DWORD c = atoi(cEdit);
 			
+			auto tc = GetTickCount();
 			for (DWORD i = 0; i < c; i++) {
 				StepOver();
 			}
 			ListTrace();
+			printf("tc: %f\n", (GetTickCount() - tc) / 1000.f);
 			break;
 		}
 		case ADD_ALIAS: {
@@ -1241,7 +1229,6 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 			ULONG_PTR ptr = _strtoui64(buf, NULL, 16);
 
 			c.Rip = dbg.procBase + ptr;
-			c.Rcx = 0; //set index register
 			dbg.SetContext(&c);
 			ShowDisasm();
 
