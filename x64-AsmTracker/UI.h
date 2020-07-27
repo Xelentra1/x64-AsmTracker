@@ -108,10 +108,15 @@ extern CRegisterTracker* regTracker;
 //UI
 class CScriptGUI {
 public:
+	std::string newScript;
 	HWND hWnd;
 	HWND hLogEdit;
 	HWND hScriptEdit;
 	HWND hScriptBox;
+	DWORD iCurScript = 0;
 	void Init();
+	void SetScript(std::string script) {
+		SetWindowText(hScriptEdit, script.c_str());
+	};
 };
 extern CScriptGUI* scriptGui;

@@ -308,6 +308,9 @@ public:
 	}
 } gui;
 
+#include <filesystem>
+namespace fs = ::std::filesystem;
+std::vector<std::string> base_scripts;
 	void CScriptGUI::Init() {
 
 		const char* wndClass = "script_wndclass";
@@ -340,7 +343,8 @@ public:
 			hInstance,
 			NULL);        // pointer not needed 
 
-		SetWindowText(hScriptEdit,
+		
+		newScript =
 			"if(not FileLoaded()) then LoadPreviousFile()\r\n"
 			"else ResetDbg() end\r\n"
 			"local r = GetBase()+0x1434492\r\n"
@@ -361,9 +365,9 @@ public:
 			"local t = Track(RAX)\r\n"
 			"Log('tc2: '..(GetTickCount()-tc)/1000)\r\n"
 			"Log(string.format('RAX Track! %x',t.rva))\r\n"
-			"Log('Dump {') Log(t:dump()) Log('}')"
+			"Log('Dump {') Log(t:dump()) Log('}')";
+		SetScript(newScript);
 		
-		);
 		auto hFont = gui.fConsolas;
 		SendMessage(hScriptEdit, WM_SETFONT, WPARAM(hFont), TRUE);
 
@@ -382,6 +386,18 @@ public:
 		SendMessage(hScriptBox, LB_ADDSTRING, 0, (LPARAM)"New");
 		SendMessage(hScriptBox, LB_SETCURSEL, 0, 0);
 
+		//list scripts..
+		fs::path p = "scripts";
+		for (auto it = fs::directory_iterator(p); it != fs::directory_iterator(); it++) {
+			auto& path = it->path();
+			if (fs::is_regular_file(path) && (it->path().extension().wstring() == L".lua")) {
+				base_scripts.push_back(path.filename().string());
+			}
+		}
+		std::sort(base_scripts.begin(), base_scripts.end());
+		for (auto s : base_scripts) {
+			SendMessage(hScriptBox, LB_ADDSTRING, 0, (LPARAM)s.c_str());
+		}
 
 		MakeGroupBox(hWnd, L"LOG", 28, 388, 740, 160);
 		hLogEdit = CreateWindowExA(
@@ -1016,6 +1032,24 @@ void LoadPreviousFile() {
 	ShowDisasm();
 }
 
+std::string ReadFileAsBinary(std::string const& path) {
+	std::string sresult;
+	std::vector<char> result;
+	FILE* hFile = NULL;
+	fopen_s(&hFile, path.c_str(), "rb");
+
+	if (hFile == NULL)
+		return sresult;
+	fseek(hFile, 0, SEEK_END);
+	size_t size = ftell(hFile);
+	fseek(hFile, 0, SEEK_SET);
+	result.resize(size);
+	int dwRead = fread(result.data(), 1, result.size(), hFile);
+	result.resize(dwRead);
+	fclose(hFile);
+	sresult = std::string(result.data(), result.size());
+	return sresult;
+}
 LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
@@ -1029,6 +1063,28 @@ LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 			SendMessage(gui.hWnd, WM_PAINT, 0, 0);
 			break;
 		}
+		case SCRIPT_BOX:
+			switch (HIWORD(wParam))
+			{
+			case LBN_SELCHANGE: {
+				HWND hwndList =scriptGui->hScriptBox;
+
+				// Get selected index.
+				int lbItem = (int)SendMessage(hwndList, LB_GETCURSEL, 0, 0);
+				if (scriptGui->iCurScript != lbItem) {
+					scriptGui->iCurScript = lbItem;
+					if (lbItem == 0) {
+						scriptGui->SetScript(scriptGui->newScript);
+					}
+					else {
+						auto path = base_scripts[lbItem - 1];
+						scriptGui->SetScript(ReadFileAsBinary("scripts\\"+path));
+
+					}
+				}
+			}
+			}
+			break;
 		}
 		break;
 	}
