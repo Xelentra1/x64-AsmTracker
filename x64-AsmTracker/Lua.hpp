@@ -197,6 +197,31 @@ ZydisDecodedInstruction Decode(DWORD64 rip) {
 	return instruction;
 }
 
+#define MAX_PROCESSES 1024
+
+#include <vector>
+#undef UNICODE
+#include <TlHelp32.h>
+DWORD nMinThreads = 0;
+static std::vector<uint64_t> FindProcess(std::string name)
+{
+	std::vector<uint64_t> res;
+	HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+	if (!snap) throw std::exception("CreateToolhelp32Snapshot failed");
+	PROCESSENTRY32 entry;
+	entry.dwSize = sizeof(entry);
+	if (!Process32First(snap, &entry)) throw std::exception("Process32First failed");
+	do
+	{
+		if (!_stricmp(entry.szExeFile, name.c_str()) && (nMinThreads == 0 || (entry.cntThreads > nMinThreads)))
+		{
+			res.push_back(entry.th32ProcessID);
+		}
+	} while (Process32Next(snap, &entry));
+	CloseHandle(snap);
+	return res;
+}
+
 void LuaInit() {
 	static bool bInit = false;
 	if (bInit) return;
@@ -237,8 +262,53 @@ void LuaInit() {
 	rtbl["dump"] = DumpFormula;
 
 
+	lua.set_function("CreateProcess", [](const char* szFile) {
+
+		STARTUPINFOA startupinfo = { 0 };
+		startupinfo.cb = sizeof(startupinfo);
+		PROCESS_INFORMATION processinfo = { 0 };
+		unsigned int creationflags = 0;
+
+		return CreateProcessA(
+			szFile
+			, NULL,
+			NULL,
+			NULL,
+			FALSE,
+			creationflags,
+			NULL,
+			NULL,
+			&startupinfo,
+			&processinfo);
+		});
+	lua.set_function("Sleep", Sleep);
 	lua.set_function("GetTickCount", GetTickCount);
 	lua.set_function("ResetDbg", ResetDbg);
+	lua.set_function("FindProcess", [](std::string target) {
+		auto r = FindProcess(target);
+		return r.size() ? r[0] : 0;
+		});
+	lua.set_function("Attach", [](DWORD pid) {
+		bool ret = false;
+		if (pid == 0) return ret;
+		if (dbg.AttachProcess(pid)) {
+
+			dbg.SingleStep();
+			extern bool bExcept;
+			bExcept = false;
+
+			auto c = dbg.GetContext();
+			char msg[124];
+			sprintf_s(msg, 124, "RVA: %p", c.Rip);
+			//gui.SetStatus(msg);
+		//	gui.SetTitle(vLastFiles[0].c_str());
+
+			//show disasm
+			ShowDisasm();
+			ret= true;
+		}
+		return ret;
+		});
 	lua.set_function("FileLoaded", []() {
 		return !dbg.filename.empty();
 		});

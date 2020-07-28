@@ -345,7 +345,8 @@ std::vector<std::string> base_scripts;
 
 		
 		newScript =
-			"if(not FileLoaded()) then LoadPreviousFile()\r\n"
+			//"if(not FileLoaded()) then LoadPreviousFile()\r\n"
+			"if(not FileLoaded()) then CreateProcess('C:\\\\Games\\\\Call of Duty Modern Warfare\\\\ModernWarfare.exe') Sleep(2000) local p = FindProcess('modernwarfare.exe') if p > 0 then Attach(p) Log('pid '..p) else Log('bad pid') return end\r\n"
 			"else ResetDbg() end\r\n"
 			//"local r = GetBase()+0x1434492\r\n"
 			"local r = DoScan('0F B6 4C 24 40 48 C1 C9 0C 83 E1 0F 48 83 F9 0E')\r\n"
@@ -1095,6 +1096,22 @@ std::string ReadFileAsBinary(std::string const& path) {
 	sresult = std::string(result.data(), result.size());
 	return sresult;
 }
+bool CScriptGUI::SetCurScript(DWORD idx) {
+	if (scriptGui->iCurScript != idx) {
+		scriptGui->iCurScript = idx;
+		SendMessage(hScriptBox, LB_SETCURSEL, idx, 0);
+		if (idx == 0) {
+			scriptGui->SetScript(scriptGui->newScript);
+		}
+		else {
+			auto path = base_scripts[idx - 1];
+			scriptGui->SetScript(ReadFileAsBinary("scripts\\" + path));
+
+		}
+		return true;
+	}
+	return false;
+}
 LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
 	switch (message)
@@ -1116,17 +1133,7 @@ LRESULT CALLBACK ScriptWindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
 
 				// Get selected index.
 				int lbItem = (int)SendMessage(hwndList, LB_GETCURSEL, 0, 0);
-				if (scriptGui->iCurScript != lbItem) {
-					scriptGui->iCurScript = lbItem;
-					if (lbItem == 0) {
-						scriptGui->SetScript(scriptGui->newScript);
-					}
-					else {
-						auto path = base_scripts[lbItem - 1];
-						scriptGui->SetScript(ReadFileAsBinary("scripts\\"+path));
-
-					}
-				}
+				scriptGui->SetCurScript(lbItem);
 			}
 			}
 			break;
@@ -1207,7 +1214,7 @@ LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lPara
 					else {
 						//comment
 						if (f.iComment == 0 && bShowComments) {//look for comment..
-							printf("gen comment.. %p\n",f.rva);
+							//printf("gen comment.. %p\n",f.rva);
 							f.iComment = 3; //means we scanned
 
 							auto instruction = f.get_instruction();
@@ -1410,6 +1417,9 @@ void LoadCfg() {
 	const char* szFile = "asm_dbg.cfg";
 	char cVal[256];
 
+	GetPrivateProfileStringA("CFG", "scriptIdx", "0", cVal, 124, szFile);
+	scriptGui->SetCurScript(atoi(cVal));
+
 	GetPrivateProfileStringA("CFG", "stepTimes", "1", cVal, 124, szFile);
 	SetWindowTextA(gui.stepEdit, cVal);
 	GetPrivateProfileStringA("CFG", "setRip", "0", cVal, 124, szFile);
@@ -1428,6 +1438,8 @@ void SaveCfg() {
 	WritePrivateProfileStringA("CFG", "stepTimes", cVal, szFile);
 	GetWindowTextA(gui.ripEdit, cVal, 64);
 	WritePrivateProfileStringA("CFG", "setRip", cVal, szFile);
+	sprintf_s(cVal, 64, "%i", scriptGui->iCurScript);
+	WritePrivateProfileStringA("CFG", "scriptIdx", cVal, szFile);
 
 	//save last files..
 	if (!dbg.filename.empty()) {

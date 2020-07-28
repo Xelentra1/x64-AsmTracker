@@ -129,5 +129,6 @@ public:
 	void SetScript(std::string script) {
 		SetWindowText(hScriptEdit, script.c_str());
 	};
+	bool SetCurScript(DWORD idx);
 };
 extern CScriptGUI* scriptGui;
